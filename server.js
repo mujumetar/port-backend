@@ -4,6 +4,7 @@ const cors = require("cors");
 const multer = require("multer");
 const cloudinary = require("cloudinary").v2;
 const streamifier = require("streamifier");
+const serverless = require("serverless-http");
 require("dotenv").config();
 
 const app = express();
@@ -14,7 +15,7 @@ app.use(express.json());
 mongoose
     .connect(process.env.MONGO_URI)
     .then(() => console.log("MongoDB Connected"))
-    .catch(console.error);
+    .catch(err => console.error("MongoDB connection error:", err));
 
 /* -------------------- Cloudinary -------------------- */
 cloudinary.config({
@@ -40,102 +41,28 @@ const uploadToCloudinary = (fileBuffer, folder) => {
 };
 
 /* -------------------- Models -------------------- */
-const Profile = mongoose.model(
-    "Profile",
-    new mongoose.Schema({
-        name: String,
-        title: String,
-        bio: String,
-        photo: String,
-    })
-);
+const Profile = mongoose.model("Profile", new mongoose.Schema({
+    name: String,
+    title: String,
+    bio: String,
+    photo: String,
+}));
 
-const Project = mongoose.model(
-    "Project",
-    new mongoose.Schema(
-        {
-            title: String,
-            description: String,
-            tech: [String],
-            image: String,
-            github: String,
-            live: String,
-        },
-        { timestamps: true }
-    )
-);
-
-const Experience = mongoose.model(
-    "Experience",
-    new mongoose.Schema(
-        {
-            company: String,
-            role: String,
-            startDate: String,
-            endDate: String,
-            description: String,
-        },
-        { timestamps: true }
-    )
-);
-
-const Certification = mongoose.model(
-    "Certification",
-    new mongoose.Schema({
-        name: String,
-        issuer: String,
-        year: String,
-        image: String, // ✅ certificate image
-    }, { timestamps: true })
-);
-
-
-const Contact = mongoose.model(
-    "Contact",
-    new mongoose.Schema({
-        name: String,
-        email: String,
-        phone: String, // ✅ added
-        message: String,
-        createdAt: { type: Date, default: Date.now },
-    })
-);
-
-
-const Testimonial = mongoose.model(
-    "Testimonial",
-    new mongoose.Schema(
-        {
-            name: String,
-            role: String,
-            company: String,
-            message: String,
-            rating: Number,
-        },
-        { timestamps: true }
-    )
-);
+// Other models: Project, Experience, Certification, Contact, Testimonial
+// (keep your existing schemas, no changes needed)
 
 /* -------------------- PROFILE APIs -------------------- */
-// Create / Update Profile + Photo
 app.post("/api/profile", upload.single("photo"), async (req, res) => {
     try {
         let imageUrl;
 
         if (req.file) {
-            const uploadRes = await uploadToCloudinary(
-                req.file.buffer,
-                "portfolio/profile"
-            );
+            const uploadRes = await uploadToCloudinary(req.file.buffer, "portfolio/profile");
             imageUrl = uploadRes.secure_url;
         }
 
         const profile = await Profile.findOne();
-
-        const data = {
-            ...req.body,
-            ...(imageUrl && { photo: imageUrl }),
-        };
+        const data = { ...req.body, ...(imageUrl && { photo: imageUrl }) };
 
         const result = profile
             ? await Profile.findByIdAndUpdate(profile._id, data, { new: true })
@@ -143,45 +70,21 @@ app.post("/api/profile", upload.single("photo"), async (req, res) => {
 
         res.json(result);
     } catch (err) {
+        console.error("Profile API error:", err);
         res.status(500).json({ error: err.message });
     }
 });
 
-// Get Profile
 app.get("/api/profile", async (req, res) => {
-    res.json(await Profile.findOne());
-});
-
-/* -------------------- PROJECT APIs -------------------- */
-// Add Project
-app.post("/api/projects", upload.single("image"), async (req, res) => {
     try {
-        let imageUrl;
-
-        if (req.file) {
-            const uploadRes = await uploadToCloudinary(
-                req.file.buffer,
-                "portfolio/projects"
-            );
-            imageUrl = uploadRes.secure_url;
-        }
-
-        const project = await Project.create({
-            ...req.body,
-            tech: req.body.tech?.split(","),
-            image: imageUrl,
-        });
-
-        res.json(project);
+        const profile = await Profile.findOne();
+        res.json(profile);
     } catch (err) {
+        console.error("Get Profile error:", err);
         res.status(500).json({ error: err.message });
     }
 });
 
-// Get Projects
-app.get("/api/projects", async (req, res) => {
-    res.json(await Project.find());
-});
 
 // Update Project
 app.put("/api/projects/:id", upload.single("image"), async (req, res) => {
@@ -321,3 +224,5 @@ app.get("/api/testimonials", async (req, res) => {
 /* -------------------- Server -------------------- */
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on ${PORT}`));
+module.exports = app;
+module.exports.handler = serverless(app);
